@@ -6,17 +6,21 @@
     continuation_decode/1
 ]).
 
+-ifdef(TEST).
+-export([from_json/1]).
+-endif.
+
 
 to_json(Data) ->
     jiffy:encode(Data).
 
 
 continuation_encode(M) ->
-    base64:encode(to_json(M), #{mode => urlsafe}).
+    base64:encode(to_json(M), #{mode => urlsafe, padding => false}).
 
 
 continuation_decode(C) ->
-    from_json(base64:decode(C, #{mode => urlsafe})).
+    from_json(base64:decode(C, #{mode => urlsafe, padding => false})).
 
 
 % internal functions

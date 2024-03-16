@@ -105,7 +105,7 @@ parse_params(Req) ->
             #{continuation => Continuation}
     end,
 
-    PageSize = binary_to_integer(proplists:get_value(<<"pagesize">>, Qs, 100)),
+    PageSize = binary_to_integer(proplists:get_value(<<"pagesize">>, Qs, <<"100">>)),
     case PageSize < 2 of
         true ->
             % TODO support pagesize=1
@@ -147,6 +147,49 @@ fib_process_pagination2_test() ->
 
     R3 = fib_process(#{continuation => C2, pagesize => 4}),
     ?assertEqual(#{<<"numbers">> => [21,34]}, R3).
+
+
+http_req(Params) ->
+    Url = <<"http://localhost:8000/fibs/generate?", Params/binary>>,
+    %?debugFmt("URL=~p", [Url]),
+    {ok, {{_, 200, _}, _Heaers, Body}} = httpc:request(get, {Url,[]}, [], [{sync,true}]),
+    %?debugFmt("Body=~p", [Body]),
+    Rjson = fibs_util:from_json(Body),
+    %?debugFmt("Rjson=~p", [Rjson]),
+    Rjson.
+
+fib_http_test_() ->
+    {
+        setup,
+        fun() ->
+            {ok, _} = application:ensure_all_started(fibs)
+        end,
+        fun(_) ->
+            ok = application:stop(fibs)
+        end,
+        [
+            fun test_http_basic/0,
+            fun test_http_cont/0
+        ]
+    }.
+
+
+test_http_basic() ->
+    R = http_req(<<"count=8">>),
+    ?assertEqual(#{<<"numbers">> => [0,1,1,2,3,5,8,13]}, R).
+
+
+test_http_cont() ->
+    R1 = http_req(<<"count=10&pagesize=5">>),
+    C1 = maps:get(<<"continuation">>, R1),
+    ?assertEqual(#{<<"numbers">> => [0,1,1,2,3], <<"continuation">> => C1}, R1),
+
+    R2 = http_req(<<"continuation=",C1/binary,"&pagesize=2">>), % change pagesize
+    C2 = maps:get(<<"continuation">>, R2),
+    ?assertEqual(#{<<"numbers">> => [5,8], <<"continuation">> => C2}, R2),
+
+    R3 = http_req(<<"continuation=",C2/binary>>),
+    ?assertEqual(#{<<"numbers">> => [13,21,34]}, R3).
 
 
 -endif.
