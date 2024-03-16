@@ -105,7 +105,7 @@ parse_params(Req) ->
             #{continuation => Continuation}
     end,
 
-    PageSize = proplists:get_value(<<"pagesize">>, Qs, 100),
+    PageSize = binary_to_integer(proplists:get_value(<<"pagesize">>, Qs, 100)),
     case PageSize < 2 of
         true ->
             % TODO support pagesize=1
