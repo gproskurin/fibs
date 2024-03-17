@@ -16,11 +16,13 @@ to_json(Data) ->
 
 
 continuation_encode(M) ->
-    base64:encode(to_json(M), #{mode => urlsafe, padding => false}).
+    %base64:encode(to_json(M), #{mode => urlsafe, padding => false}).
+    uri_string:quote(iolist_to_binary(to_json(M))).
 
 
 continuation_decode(C) ->
-    from_json(base64:decode(C, #{mode => urlsafe, padding => false})).
+    %from_json(base64:decode(C, #{mode => urlsafe, padding => false})).
+    from_json(uri_string:unquote(iolist_to_binary(C))).
 
 
 % internal functions

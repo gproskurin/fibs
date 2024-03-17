@@ -169,6 +169,7 @@ fib_http_test_() ->
         end,
         [
             fun test_http_basic/0,
+            fun test_http_basic2/0,
             fun test_http_cont/0
         ]
     }.
@@ -177,6 +178,11 @@ fib_http_test_() ->
 test_http_basic() ->
     R = http_req(<<"count=8">>),
     ?assertEqual(#{<<"numbers">> => [0,1,1,2,3,5,8,13]}, R).
+
+
+test_http_basic2() ->
+    R = http_req(<<"count=150">>),
+    ?assertMatch(#{<<"numbers">> := [_|_]}, R).
 
 
 test_http_cont() ->
