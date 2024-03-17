@@ -35,13 +35,9 @@ content_types_provided(Req, State) ->
 
 
 handle_from_json(Req, State) ->
-    case parse_params(Req) of
-        {ok, Params} ->
-            Result = maybe_encode_continuation(fib_process(Params)),
-            {fibs_util:to_json(Result), Req, State};
-        {error, {validation_error, Msg}} ->
-            {fibs_util:to_json(#{<<"error">> => Msg}), Req, State} % TODO return error code
-    end.
+    {ok, Params} = parse_params(Req),
+    Result = maybe_encode_continuation(fib_process(Params)),
+    {fibs_util:to_json(Result), Req, State}.
 
 
 maybe_encode_continuation(#{<<"continuation">> := C} = M) ->
@@ -106,15 +102,10 @@ parse_params(Req) ->
     end,
 
     PageSize = binary_to_integer(proplists:get_value(<<"pagesize">>, Qs, <<"100">>)),
-    case PageSize < 2 of
-        true ->
-            % TODO support pagesize=1
-            {error, {validation_error, <<"pagesize_must_be_at_least_2">>}};
-        false ->
-            Param = Param0#{pagesize => PageSize},
-            ?LOG_NOTICE("Parsed parameters: ~p", [Param]),
-            {ok, Param}
-    end.
+    Param = Param0#{pagesize => PageSize},
+
+    ?LOG_NOTICE("Parsed parameters: ~p", [Param]),
+    {ok, Param}.
 
 
 -ifdef(TEST).
@@ -197,20 +188,35 @@ fib_http_test_() ->
         end,
         [
             fun test_http_basic/0,
-            fun test_http_basic2/0,
+            fun test_http_pagesize1/0,
             fun test_http_cont/0
         ]
     }.
 
 
 test_http_basic() ->
-    R = http_req(<<"count=8">>),
-    ?assertEqual(#{<<"numbers">> => [0,1,1,2,3,5,8,13]}, R).
+    R1 = http_req(<<"count=8">>),
+    ?assertEqual(#{<<"numbers">> => [0,1,1,2,3,5,8,13]}, R1),
+
+    R2 = http_req(<<"count=150">>),
+    ?assertMatch(#{<<"numbers">> := [_|_]}, R2).
 
 
-test_http_basic2() ->
-    R = http_req(<<"count=150">>),
-    ?assertMatch(#{<<"numbers">> := [_|_]}, R).
+test_http_pagesize1() ->
+    R1 = http_req(<<"count=4&pagesize=1">>),
+    C1 = maps:get(<<"continuation">>, R1),
+    ?assertEqual(#{<<"numbers">> => [0], <<"continuation">> => C1}, R1),
+
+    R2 = http_req(<<"continuation=",C1/binary,"&pagesize=1">>),
+    C2 = maps:get(<<"continuation">>, R2),
+    ?assertEqual(#{<<"numbers">> => [1], <<"continuation">> => C2}, R2),
+
+    R3 = http_req(<<"continuation=",C2/binary,"&pagesize=1">>),
+    C3 = maps:get(<<"continuation">>, R3),
+    ?assertEqual(#{<<"numbers">> => [1], <<"continuation">> => C3}, R3),
+
+    R4 = http_req(<<"continuation=",C3/binary,"&pagesize=1">>),
+    ?assertEqual(#{<<"numbers">> => [2]}, R4).
 
 
 test_http_cont() ->
