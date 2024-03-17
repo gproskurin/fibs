@@ -13,41 +13,32 @@
 
 -spec generate_rev(
         NumCount :: integer(),
-        Prev :: undefined | [integer()]
-    ) -> [integer()].
+        Prev :: [integer()]
+    ) -> {AllFibNumbers :: [integer()], FilteredFibNumbers :: [integer()]}.
 % Generate sequence of fibonacci numbers with specified length.
-% If optional list of previous numbers is specified, continue generation of
-% sequence from those previous numbers.
-%
-% Handle special cases for N=1,2, pass to generic recursive function for N>2
-% with pre-generated accumulator of first two numbers
-generate_rev(1, undefined = _Prev) ->
-    [0];
-
-generate_rev(2, undefined = _Prev) ->
-    [1, 0];
-
-generate_rev(N, undefined = _Prev) ->
-    Acc = [1, 0],
-    generate_rev_impl(N-2, Acc);
-
-generate_rev(1, [A, B] = _Prev) ->
-    [A + B];
-
-generate_rev(2, [A, B] = _Prev) ->
-    [A+A+B, A+B];
-
-generate_rev(N, [A, B] = _Prev) ->
-    Acc = [A+A+B, A+B],
-    generate_rev_impl(N-2, Acc).
+% Use list of previous numbers to continue generation of sequence.
+generate_rev(N, Prev) ->
+    generate_rev_impl(N, Prev, []).
 
 
-% Generic function to generate fibonacci sequence using accumulator of already generated numbers.
-% Requires the accumulator to have at least 2 numbers
-generate_rev_impl(0, Acc) ->
-    Acc;
-generate_rev_impl(N, [A, B | _] = Acc) ->
-    generate_rev_impl(N-1, [A+B | Acc]).
+generate_rev_impl(0, All, Filtered) ->
+    {All, Filtered};
+generate_rev_impl(N, All, Filtered) ->
+    {FibNum, NewAll} = case All of
+        [A, B | _] ->
+            F = A + B,
+            {F, [F, A]}; % we need only last two numbers from "All"
+        [] ->
+            {0, [0]};
+        [0] ->
+            {1, [1, 0]}
+    end,
+    case blacklist_has(FibNum) of
+        true ->
+            generate_rev_impl(N, NewAll, Filtered);
+        false ->
+            generate_rev_impl(N-1, NewAll, [FibNum | Filtered])
+    end.
 
 
 % blacklist functions
@@ -68,36 +59,37 @@ blacklist_has(X) when is_integer(X) ->
 -include_lib("eunit/include/eunit.hrl").
 
 
-fib_test() ->
-    ?assertEqual([0], generate_rev(1, undefined)),
-    ?assertEqual([1,0], generate_rev(2, undefined)),
-    ?assertEqual([1,1,0], generate_rev(3, undefined)),
-    ?assertEqual([2,1,1,0], generate_rev(4, undefined)),
-    ?assertEqual([3,2,1,1,0], generate_rev(5, undefined)),
-    ?assertEqual([5,3,2,1,1,0], generate_rev(6, undefined)),
-    ?assertEqual([8,5,3,2,1,1,0], generate_rev(7, undefined)),
-    Fbig1 = generate_rev(10000, undefined), % make sure complexity is not exponential
-    ?assertEqual(10000, length(Fbig1)),
-
-    ?assertEqual([8], generate_rev(1, [5,3])),
-    ?assertEqual([13,8], generate_rev(2, [5,3])),
-    ?assertEqual([21,13,8], generate_rev(3, [5,3])),
-    ?assertEqual([34,21,13,8], generate_rev(4, [5,3])),
-    Fbig2 = generate_rev(20000, [10,20]),
-    ?assertEqual(20000, length(Fbig2)),
-
-    ?assertEqual([41,25,16,9], generate_rev(4, [7,2])).
-
-
 blacklist_table_test_() ->
     {
         setup,
         fun() -> fibs_app:blacklist_table_create() end,
         fun(_) -> fibs_app:blacklist_table_destroy() end,
         [
+            fun test_fib/0,
             fun test_blacklist_table/0
         ]
     }.
+
+
+test_fib() ->
+    ?assertEqual({[0], [0]}, generate_rev(1, [])),
+    ?assertEqual({[1,0], [1,0]}, generate_rev(2, [])),
+    ?assertEqual({[1,1], [1,1,0]}, generate_rev(3, [])),
+    ?assertEqual({[2,1], [2,1,1,0]}, generate_rev(4, [])),
+    ?assertEqual({[3,2], [3,2,1,1,0]}, generate_rev(5, [])),
+    ?assertEqual({[5,3], [5,3,2,1,1,0]}, generate_rev(6, [])),
+    ?assertEqual({[8,5], [8,5,3,2,1,1,0]}, generate_rev(7, [])),
+    {[_,_], Fbig1} = generate_rev(10000, []), % make sure complexity is not exponential
+    ?assertEqual(10000, length(Fbig1)),
+
+    ?assertMatch({[8,5], [8]}, generate_rev(1, [5,3])),
+    ?assertMatch({[13,8], [13,8]}, generate_rev(2, [5,3])),
+    ?assertMatch({[21,13], [21,13,8]}, generate_rev(3, [5,3])),
+    ?assertMatch({[34,21], [34,21,13,8]}, generate_rev(4, [5,3])),
+    {[_,_], Fbig2} = generate_rev(20000, [10,20]),
+    ?assertEqual(20000, length(Fbig2)),
+
+    ?assertEqual({[41,25], [41,25,16,9]}, generate_rev(4, [7,2])).
 
 
 test_blacklist_table() ->

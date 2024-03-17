@@ -55,7 +55,7 @@ fib_process(Params) ->
 
     {Count, Prev} = case Params of
         #{count := C} ->
-            {C, undefined};
+            {C, []};
         #{continuation := #{<<"rem_count">> := C, <<"prev">> := P}} ->
             {C, P}
     end,
@@ -63,8 +63,7 @@ fib_process(Params) ->
     case Count > PageSize of
         true ->
             % numbers don't fit one page
-            FibRev = fibs_api:generate_rev(PageSize, Prev),
-            NewPrev = lists:sublist(FibRev, 2), % PageSize is >= 2, at least 2 numbers were generaged
+            {NewPrev, FibRev} = fibs_api:generate_rev(PageSize, Prev),
             NewContinuation = #{
                 <<"prev">> => NewPrev,
                 <<"rem_count">> => Count - PageSize
@@ -75,8 +74,9 @@ fib_process(Params) ->
             };
         false ->
             % all remaining numbers will fit in one page, no new continuation
+            {_NewPrev, FibRev} = fibs_api:generate_rev(Count, Prev),
             #{
-                <<"numbers">> => lists:reverse(fibs_api:generate_rev(Count, Prev))
+                <<"numbers">> => lists:reverse(FibRev)
             }
     end.
 
@@ -121,20 +121,34 @@ parse_params(Req) ->
 -include_lib("eunit/include/eunit.hrl").
 
 
-fib_process_onepage_test() ->
+handler_test_() ->
+    {
+        setup,
+        fun() -> fibs_app:blacklist_table_create() end,
+        fun(_) -> fibs_app:blacklist_table_destroy() end,
+        [
+            fun test_fib_process_onepage/0,
+            fun test_fib_process_pagination1/0,
+            fun test_fib_process_pagination2/0,
+            fun test_fib_process_blacklist/0
+        ]
+    }.
+
+
+test_fib_process_onepage() ->
     ?assertEqual(#{<<"numbers">> => [0]}, fib_process(#{count => 1, pagesize => 10})),
     ?assertEqual(#{<<"numbers">> => [0,1]}, fib_process(#{count => 2, pagesize => 10})),
     ?assertEqual(#{<<"numbers">> => [0,1,1,2,3,5,8]}, fib_process(#{count => 7, pagesize => 10})),
     ?assertEqual(#{<<"numbers">> => [0,1,1,2,3,5,8]}, fib_process(#{count => 7, pagesize => 7})).
 
 
-fib_process_pagination1_test() ->
+test_fib_process_pagination1() ->
     #{<<"numbers">> := [0,1,1,2], <<"continuation">> := C1} = fib_process(#{count => 5, pagesize => 4}),
     ?assertEqual(#{<<"rem_count">> => 1, <<"prev">> => [2,1]}, C1),
     ?assertEqual(#{<<"numbers">> => [3]}, fib_process(#{continuation => C1, pagesize => 4})).
 
 
-fib_process_pagination2_test() ->
+test_fib_process_pagination2() ->
     R1 = fib_process(#{count => 10, pagesize => 4}),
     C1 = maps:get(<<"continuation">>, R1),
     ?assertEqual(#{<<"numbers">> => [0,1,1,2], <<"continuation">> => C1}, R1),
@@ -147,6 +161,20 @@ fib_process_pagination2_test() ->
 
     R3 = fib_process(#{continuation => C2, pagesize => 4}),
     ?assertEqual(#{<<"numbers">> => [21,34]}, R3).
+
+
+test_fib_process_blacklist() ->
+    fibs_api:blacklist_add(0),
+    fibs_api:blacklist_add(1),
+    fibs_api:blacklist_add(8),
+    R1 = fib_process(#{count => 7, pagesize => 4}),
+    C1 = maps:get(<<"continuation">>, R1),
+    ?assertEqual(#{<<"numbers">> => [2,3,5,13], <<"continuation">> => C1}, R1),
+    ?assertEqual(#{<<"rem_count">> => 3, <<"prev">> => [13,8]}, C1),
+
+    fibs_api:blacklist_add(34),
+    R2 = fib_process(#{continuation => C1, pagesize => 4}),
+    ?assertEqual(#{<<"numbers">> => [21,55,89]}, R2).
 
 
 http_req(Params) ->
